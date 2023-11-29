@@ -1,4 +1,6 @@
 const express = require("express");
+require("dotenv").config();
+const verifyToken = require("./secure/verifyToken");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
@@ -6,8 +8,23 @@ const mimeTypes = require("mime-types");
 const uuid = require("uuid");
 const path = require("path");
 const app = express();
+
 app.use(express.json());
 app.use(cors()); // Enable CORS
+
+// Middleware to verify token for specific routes
+const excludeTokenVerificationRoutes = ["/api/preview"];
+
+app.use((req, res, next) => {
+  const shouldExcludeTokenVerification = excludeTokenVerificationRoutes.some(route => req.path.startsWith(route));
+
+  if (shouldExcludeTokenVerification) {
+    // Skip token verification for specific routes
+    next();
+  } else {
+    verifyToken(req, res, next);
+  }
+});
 
 // SET STORAGE
 const storage = multer.diskStorage({
@@ -50,6 +67,10 @@ const upload = multer({
             cb(error);
         }
     },
+});
+
+app.get("/", (req, res) => {
+  res.send("Cloud CDN filer server is up :)");
 });
 
 // Single file upload endpoint
