@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-filer-deployment
+  namespace: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloud-filer
+  template:
+    metadata:
+      labels:
+        app: cloud-filer
+    spec:
+      imagePullSecrets:
+      - name: myregistrykey
+      containers:
+      - name: cloud-filer
+        image: fandilladp/cloud-filer:latest
+        ports:
+        - containerPort: 3121
+        env:
+        - name: TOKEN
+          value: "{{yourtoken}}"
+        volumeMounts:
+        - mountPath: /app/db
+          name: filer-storage
+      volumes:
+      - name: filer-storage
+        persistentVolumeClaim:
+          claimName: cloud-filer-pvc

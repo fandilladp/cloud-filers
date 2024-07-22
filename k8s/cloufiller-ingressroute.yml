@@ -1,0 +1,15 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: cloudfiller
+  namespace: dev
+spec:
+  entryPoints:
+  - web
+  - websecure
+  routes:
+  - match: Host(`file.forbetterkkp.site`)
+    kind: Rule
+    services:
+    - name: cloud-filer-service
+      port: 80
