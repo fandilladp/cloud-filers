@@ -16,7 +16,9 @@ app.use(cors()); // Enable CORS
 const excludeTokenVerificationRoutes = ["/api/preview"];
 
 app.use((req, res, next) => {
-  const shouldExcludeTokenVerification = excludeTokenVerificationRoutes.some(route => req.path.startsWith(route));
+  const shouldExcludeTokenVerification = excludeTokenVerificationRoutes.some(
+    (route) => req.path.startsWith(route)
+  );
 
   if (shouldExcludeTokenVerification) {
     // Skip token verification for specific routes
@@ -46,27 +48,29 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-    storage: storage,
-    limits: { fileSize: 100 * 1024 * 1024 }, 
-    fileFilter: function (req, file, cb) {
-        const allowedMimeTypes = [
-            "application/pdf",
-            "text/csv",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ];
+  storage: storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: function (req, file, cb) {
+    const allowedMimeTypes = [
+      "application/pdf",
+      "text/csv",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/png",
+      "image/jpeg",
+    ];
 
-        const mimeType = mimeTypes.lookup(file.originalname);
-        if (allowedMimeTypes.includes(mimeType)) {
-            cb(null, true);
-        } else {
-            const error = new Error(
-                "Invalid file type. Only PDF, CSV, Excel, and Word files are allowed."
-            );
-            error.httpStatusCode = 400;
-            cb(error);
-        }
-    },
+    const mimeType = mimeTypes.lookup(file.originalname);
+    if (allowedMimeTypes.includes(mimeType)) {
+      cb(null, true);
+    } else {
+      const error = new Error(
+        "Invalid file type. Only PDF, CSV, Excel, and Word files are allowed."
+      );
+      error.httpStatusCode = 400;
+      cb(error);
+    }
+  },
 });
 
 app.get("/", (req, res) => {
@@ -108,8 +112,11 @@ app.get("/api/preview/:folderName/:id", (req, res) => {
   const filename = req.params.id;
   const filePath = path.join(__dirname, "db", folderName, filename);
 
-  const stat = fs.statSync(filePath);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send("File not found");
+  }
 
+  const stat = fs.statSync(filePath);
   const mimeType = mimeTypes.lookup(filePath);
 
   if (mimeType === "application/pdf") {
@@ -129,11 +136,22 @@ app.get("/api/preview/:folderName/:id", (req, res) => {
   ) {
     // For CSV and Excel files, serve as a download
     res.download(filePath, filename);
+  } else if (["image/png", "image/jpeg"].includes(mimeType)) {
+    // For image files, serve as a preview
+    res.writeHead(200, {
+      "Content-Type": mimeType,
+      "Content-Length": stat.size,
+    });
+
+    const readStream = fs.createReadStream(filePath);
+    readStream.pipe(res);
   } else {
     // For other file types, you can customize the response accordingly
     res
       .status(400)
-      .send("Invalid file type. Only PDF, CSV, and Excel files are allowed.");
+      .send(
+        "Invalid file type. Only PDF, CSV, Excel, PNG, and JPEG files are allowed."
+      );
   }
 });
 
