@@ -1,0 +1,11 @@
+version: "3"
+services:
+  cloud-file:
+    build: .
+    ports:
+      - "3121:3121"
+    environment:
+      - PORT=3121
+      - STORAGE_PATH=/mnt/nfs-storage/uploads
+    volumes:
+      - /mnt/nfs-storage:/mnt/nfs-storage

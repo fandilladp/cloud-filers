@@ -1,20 +1,20 @@
-# Menggunakan image Node.js resmi sebagai base image
-FROM node:20
+# Base image
+FROM node:18-alpine
 
-# Mengatur working directory
-WORKDIR /app
+# Set the working directory
+WORKDIR /usr/src/app
 
-# Menyalin package.json dan package-lock.json
+# Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Menginstall dependencies
+# Install dependencies
 RUN npm install
 
-# Menyalin semua file ke working directory
+# Copy the rest of the application code
 COPY . .
 
-# Mengekspos port yang digunakan aplikasi
+# Expose the application port
 EXPOSE 3121
 
-# Menjalankan aplikasi
+# Start the application
 CMD ["npm", "start"]

@@ -32,7 +32,7 @@ app.use((req, res, next) => {
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const folderName = req.query.folder || "uploads";
-    const folderPath = path.join(__dirname, "db", folderName);
+    const folderPath = path.join(process.env.STORAGE_PATH, folderName);
 
     // Create the folder if it doesn't exist
     if (!fs.existsSync(folderPath)) {
@@ -107,10 +107,11 @@ app.post(
 );
 
 // Preview or download file endpoint
+// Preview or download file endpoint
 app.get("/api/preview/:folderName/:id", (req, res) => {
   const folderName = req.params.folderName;
   const filename = req.params.id;
-  const filePath = path.join(__dirname, "db", folderName, filename);
+  const filePath = path.join(process.env.STORAGE_PATH, folderName, filename); // Menggunakan STORAGE_PATH dari .env
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
@@ -164,6 +165,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(3121, () => {
-  console.log("Server started on port 3121");
+app.listen(process.env.PORT, () => {
+  console.log("Server started on port" + process.env.PORT);
 });
