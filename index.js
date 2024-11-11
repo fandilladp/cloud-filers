@@ -7,6 +7,7 @@ const fs = require("fs");
 const mimeTypes = require("mime-types");
 const uuid = require("uuid");
 const path = require("path");
+const sharp = require("sharp");
 const app = express();
 
 app.use(express.json());
@@ -108,53 +109,57 @@ app.post(
 
 // Preview or download file endpoint
 // Preview or download file endpoint
-app.get("/api/preview/:folderName/:id", (req, res) => {
+app.get("/api/preview/:folderName/:id", async (req, res) => {
   const folderName = req.params.folderName;
   const filename = req.params.id;
-  const filePath = path.join(process.env.STORAGE_PATH, folderName, filename); // Menggunakan STORAGE_PATH dari .env
+  const filePath = path.join(process.env.STORAGE_PATH, folderName, filename);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
   }
 
-  const stat = fs.statSync(filePath);
   const mimeType = mimeTypes.lookup(filePath);
+  const isImage = ["image/png", "image/jpeg"].includes(mimeType);
 
-  if (mimeType === "application/pdf") {
-    // For PDF files, serve as a preview
+  console.log("MIME Type:", mimeType); // Log tipe file
+  console.log("Width:", req.query.w, "Height:", req.query.h); // Log parameter w dan h
+
+  const width = parseInt(req.query.w, 10) || null;
+  const height = parseInt(req.query.h, 10) || null;
+
+  if (isImage && (width || height)) {
+    try {
+      const image = sharp(filePath);
+      const resizedImageBuffer = await image.resize(width, height).toBuffer();
+
+      res.writeHead(200, {
+        "Content-Type": mimeType,
+        "Content-Length": resizedImageBuffer.length,
+      });
+      res.end(resizedImageBuffer);
+    } catch (error) {
+      console.error("Error resizing image:", error);
+      res.status(500).send("Error processing image");
+    }
+  } else if (mimeType === "application/pdf") {
+    const stat = fs.statSync(filePath);
     res.writeHead(200, {
       "Content-Type": "application/pdf",
       "Content-Length": stat.size,
     });
-
     const readStream = fs.createReadStream(filePath);
     readStream.pipe(res);
   } else if (
-    [
-      "text/csv",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ].includes(mimeType)
+    ["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(
+      mimeType
+    )
   ) {
-    // For CSV and Excel files, serve as a download
     res.download(filePath, filename);
-  } else if (["image/png", "image/jpeg"].includes(mimeType)) {
-    // For image files, serve as a preview
-    res.writeHead(200, {
-      "Content-Type": mimeType,
-      "Content-Length": stat.size,
-    });
-
-    const readStream = fs.createReadStream(filePath);
-    readStream.pipe(res);
   } else {
-    // For other file types, you can customize the response accordingly
-    res
-      .status(400)
-      .send(
-        "Invalid file type. Only PDF, CSV, Excel, PNG, and JPEG files are allowed."
-      );
+    res.status(400).send("Invalid file type or resize not supported for this file type.");
   }
 });
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
