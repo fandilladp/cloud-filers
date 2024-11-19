@@ -42,9 +42,17 @@ const storage = multer.diskStorage({
     cb(null, folderPath);
   },
   filename: function (req, file, cb) {
-    const uniqueFilename = uuid.v4();
-    const fileExtension = file.originalname.split(".").pop();
-    cb(null, `${uniqueFilename}.${fileExtension}`);
+    const customFilename = req.query.filename; // Check if filename parameter exists
+    const fileExtension = file.originalname.split(".").pop(); // Extract file extension
+
+    if (customFilename) {
+      // Use provided filename if exists
+      cb(null, `${customFilename}.${fileExtension}`);
+    } else {
+      // Generate unique filename using UUID if no filename provided
+      const uniqueFilename = uuid.v4();
+      cb(null, `${uniqueFilename}.${fileExtension}`);
+    }
   },
 });
 
@@ -108,7 +116,6 @@ app.post(
 );
 
 // Preview or download file endpoint
-// Preview or download file endpoint
 app.get("/api/preview/:folderName/:id", async (req, res) => {
   const folderName = req.params.folderName;
   const filename = req.params.id;
@@ -121,8 +128,8 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
   const mimeType = mimeTypes.lookup(filePath);
   const isImage = ["image/png", "image/jpeg"].includes(mimeType);
 
-  console.log("MIME Type:", mimeType); // Log tipe file
-  console.log("Width:", req.query.w, "Height:", req.query.h); // Log parameter w dan h
+  console.log("MIME Type:", mimeType); // Log file type
+  console.log("Width:", req.query.w, "Height:", req.query.h); // Log width and height parameters
 
   const width = parseInt(req.query.w, 10) || null;
   const height = parseInt(req.query.h, 10) || null;
@@ -140,7 +147,7 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
         });
         res.end(resizedImageBuffer);
       } else {
-        // Jika tidak ada parameter width atau height, kirimkan gambar asli
+        // Send original image if no width or height provided
         const originalImageBuffer = await image.toBuffer();
         res.writeHead(200, {
           "Content-Type": mimeType,
@@ -171,8 +178,6 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
   }
 });
 
-
-
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -183,5 +188,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(process.env.PORT, () => {
-  console.log("Server started on port" + process.env.PORT);
+  console.log("Server started on port " + process.env.PORT);
 });
