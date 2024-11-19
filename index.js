@@ -127,18 +127,29 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
   const width = parseInt(req.query.w, 10) || null;
   const height = parseInt(req.query.h, 10) || null;
 
-  if (isImage && (width || height)) {
+  if (isImage) {
     try {
       const image = sharp(filePath);
-      const resizedImageBuffer = await image.resize(width, height).toBuffer();
 
-      res.writeHead(200, {
-        "Content-Type": mimeType,
-        "Content-Length": resizedImageBuffer.length,
-      });
-      res.end(resizedImageBuffer);
+      if (width || height) {
+        const resizedImageBuffer = await image.resize(width, height).toBuffer();
+
+        res.writeHead(200, {
+          "Content-Type": mimeType,
+          "Content-Length": resizedImageBuffer.length,
+        });
+        res.end(resizedImageBuffer);
+      } else {
+        // Jika tidak ada parameter width atau height, kirimkan gambar asli
+        const originalImageBuffer = await image.toBuffer();
+        res.writeHead(200, {
+          "Content-Type": mimeType,
+          "Content-Length": originalImageBuffer.length,
+        });
+        res.end(originalImageBuffer);
+      }
     } catch (error) {
-      console.error("Error resizing image:", error);
+      console.error("Error processing image:", error);
       res.status(500).send("Error processing image");
     }
   } else if (mimeType === "application/pdf") {
@@ -159,6 +170,7 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
     res.status(400).send("Invalid file type or resize not supported for this file type.");
   }
 });
+
 
 
 // Error handling middleware
