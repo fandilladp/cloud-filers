@@ -115,12 +115,11 @@ app.post(
   }
 );
 
-// Preview or download file endpoint
-app.get("/api/preview/:folderName/:id", async (req, res) => {
-  const folderName = req.params.folderName;
-  const filename = req.params.id;
-  const filePath = path.join(process.env.STORAGE_PATH, folderName, filename);
+app.get("/api/preview/*", async (req, res) => {
+  const relativePath = req.params[0]; // Mendapatkan seluruh path setelah /api/preview/
+  const filePath = path.join(process.env.STORAGE_PATH, relativePath);
 
+  // Periksa apakah file ada
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
   }
@@ -147,7 +146,7 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
         });
         res.end(resizedImageBuffer);
       } else {
-        // Send original image if no width or height provided
+        // Kirim gambar asli jika tidak ada width atau height yang disediakan
         const originalImageBuffer = await image.toBuffer();
         res.writeHead(200, {
           "Content-Type": mimeType,
@@ -172,7 +171,7 @@ app.get("/api/preview/:folderName/:id", async (req, res) => {
       mimeType
     )
   ) {
-    res.download(filePath, filename);
+    res.download(filePath, path.basename(filePath));
   } else {
     res.status(400).send("Invalid file type or resize not supported for this file type.");
   }
