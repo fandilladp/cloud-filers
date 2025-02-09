@@ -1,5 +1,7 @@
 const express = require("express");
 require("dotenv").config();
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const verifyToken = require("./secure/verifyToken");
 const cors = require("cors");
 const multer = require("multer");
@@ -8,6 +10,7 @@ const mimeTypes = require("mime-types");
 const uuid = require("uuid");
 const path = require("path");
 const sharp = require("sharp");
+const axios = require("axios");
 const connectDB = require("./config/configDB");
 const Document = require("./models/documentModel");
 
@@ -16,15 +19,48 @@ connectDB();
 
 const app = express();
 
+// Gunakan Helmet untuk pengamanan HTTP header
+app.use(helmet());
+
 // Middleware parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-// Token verification middleware (kecuali untuk route /api/preview)
-const excludeTokenVerificationRoutes = ["/api/preview"];
+// Rate limiter khusus untuk GET endpoints
+const getLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 100, // maksimal 100 request per IP per window
+  message: "Too many requests from this IP, please try again later."
+});
+
+// Fungsi helper untuk mengirim log ke remote server
+async function sendLog(section, logData) {
+  const logPayload = {
+    app: "cloudfile", // default nama sistem
+    section,        // misalnya nama fungsi controller, misal "uploadfile" atau "preview"
+    data: logData
+  };
+
+  axios
+    .post(process.env.HOST_LOG, logPayload, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: process.env.LOGGING_SERVER_AUTH
+      }
+    })
+    .then(response => {
+      console.log("Log sent successfully:", response.data);
+    })
+    .catch(error => {
+      console.error("Error sending log:", error.message);
+    });
+}
+
+// Token verification middleware (kecuali untuk route /api/preview dan /api/addLog)
+const excludeTokenVerificationRoutes = ["/api/preview", "/api/addLog"];
 app.use((req, res, next) => {
-  const shouldExclude = excludeTokenVerificationRoutes.some((route) =>
+  const shouldExclude = excludeTokenVerificationRoutes.some(route =>
     req.path.startsWith(route)
   );
   if (shouldExclude) {
@@ -41,8 +77,7 @@ const storage = multer.diskStorage({
     const currentYear = new Date().getFullYear();
 
     let createdDate = null;
-    // Gunakan nilai dari req.query.created (atau fallback ke req.body.created) karena req.body
-    // biasanya belum tersedia pada saat Multer memproses file
+    // Gunakan nilai dari req.query.created (atau fallback ke req.body.created)
     const createdValue = req.query.created || req.body.created;
     if (createdValue) {
       let createdString = createdValue.trim();
@@ -90,7 +125,7 @@ const storage = multer.diskStorage({
       const uniqueFilename = uuid.v4();
       cb(null, `${uniqueFilename}.${fileExtension}`);
     }
-  },
+  }
 });
 
 // Konfigurasi Multer
@@ -104,7 +139,7 @@ const upload = multer({
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "image/png",
-      "image/jpeg",
+      "image/jpeg"
     ];
     const mimeType = mimeTypes.lookup(file.originalname);
     if (allowedMimeTypes.includes(mimeType)) {
@@ -116,17 +151,18 @@ const upload = multer({
       error.httpStatusCode = 400;
       cb(error);
     }
-  },
+  }
 });
 
-// Root endpoint untuk pengecekan server
-app.get("/", (req, res) => {
+// =====================
+// ROOT ENDPOINT
+// =====================
+app.get("/", getLimiter, (req, res) => {
   res.send("Cloud CDN filer server is up :)");
+  // Log akses root endpoint
+  sendLog("Home", { message: "Root endpoint accessed", ip: req.ip });
 });
 
-// =====================
-// SINGLE FILE UPLOAD
-// =====================
 // =====================
 // SINGLE FILE UPLOAD
 // =====================
@@ -141,7 +177,7 @@ app.post(
       const file = req.files["myFile"] ? req.files["myFile"][0] : null;
       let createdDate;
 
-      // Gunakan nilai dari req.query.created jika tersedia, karena req.body.created biasanya kosong.
+      // Gunakan nilai dari req.query.created jika tersedia
       const createdValue = req.query.created || req.body.created;
       if (createdValue) {
         let createdString = createdValue.trim();
@@ -169,12 +205,12 @@ app.post(
         return next(error);
       }
 
-      // Simpan informasi file ke database dengan createdDate yang telah konsisten
+      // Simpan informasi file ke database
       const documentData = {
         app: req.body.app || "system",
         path: file.path,
         created: createdDate,
-        delete: false,
+        delete: false
       };
       if (key) {
         documentData.key = key;
@@ -185,14 +221,21 @@ app.post(
       res.send({
         message: "File uploaded successfully",
         filename: file.filename,
-        document,
+        document
+      });
+
+      // Log aksi upload file
+      sendLog("UploadFile", {
+        message: "Single file uploaded",
+        filename: file.filename,
+        path: file.path,
+        app: req.body.app || "system"
       });
     } catch (err) {
       next(err);
     }
   }
 );
-
 
 // =====================
 // MULTIPLE FILE UPLOAD
@@ -208,13 +251,19 @@ app.post(
         error.httpStatusCode = 400;
         return next(error);
       }
-      // Jika diperlukan, Anda dapat menambahkan penyimpanan informasi setiap file ke database
       res.send({
         message: "Files uploaded successfully",
-        files: files.map((file) => ({
+        files: files.map(file => ({
           filename: file.filename,
-          path: file.path,
-        })),
+          path: file.path
+        }))
+      });
+
+      // Log aksi multiple file upload
+      sendLog("UploadMultiple", {
+        message: "Multiple files uploaded",
+        count: files.length,
+        files: files.map(f => f.filename)
       });
     } catch (err) {
       next(err);
@@ -223,19 +272,19 @@ app.post(
 );
 
 // =====================
-// PREVIEW ENDPOINT
+// PREVIEW ENDPOINT (dengan rate limiter)
 // =====================
-app.get("/api/preview/*", async (req, res) => {
+app.get("/api/preview/*", getLimiter, async (req, res) => {
   try {
-    // Dapatkan relative path dari URL (misalnya "tesdev/namafile.jpg")
+    // Dapatkan relative path dari URL
     const relativePath = req.params[0];
     const key = req.query.key;
     console.log("DEBUG: Relative path:", relativePath);
 
-    // Cari dokumen di database berdasarkan path dan status delete false
+    // Cari dokumen di database
     const document = await Document.findOne({
       path: new RegExp(relativePath),
-      delete: false,
+      delete: false
     });
     console.log("DEBUG: Document found:", document);
 
@@ -243,28 +292,30 @@ app.get("/api/preview/*", async (req, res) => {
     if (document) {
       // Cek key jika diperlukan
       if (document.key && document.key !== key) {
-        console.log("DEBUG: Invalid key. Document key:", document.key, "Query key:", key);
+        console.log(
+          "DEBUG: Invalid key. Document key:",
+          document.key,
+          "Query key:",
+          key
+        );
         return res.status(403).send("Invalid key");
       }
-      // Konversi document.created ke Date dan peroleh tahun pembuatannya
+      // Tentukan base path berdasarkan tahun created
       const createdDate = new Date(document.created);
       const createdYear = createdDate.getFullYear();
       const currentYear = new Date().getFullYear();
-      console.log("DEBUG: Document created date:", createdDate, "Created year:", createdYear, "Current year:", currentYear);
 
-      // Jika tahun pembuatan tidak sama dengan tahun saat ini, gunakan STORAGE_PATH_ARCHIVE,
-      // jika sama, gunakan STORAGE_PATH.
-      basePath = (createdYear !== currentYear)
-        ? process.env.STORAGE_PATH_ARCHIVE
-        : process.env.STORAGE_PATH;
+      basePath =
+        createdYear !== currentYear
+          ? process.env.STORAGE_PATH_ARCHIVE
+          : process.env.STORAGE_PATH;
       console.log("DEBUG: Computed basePath from DB:", basePath);
     } else {
-      // Jika dokumen tidak ditemukan di DB, asumsikan file berada di STORAGE_PATH
       console.log("DEBUG: Document not found, using STORAGE_PATH");
       basePath = process.env.STORAGE_PATH;
     }
 
-    // Gabungkan basePath dengan relativePath untuk mendapatkan filePath
+    // Gabungkan basePath dengan relativePath
     const filePath = path.join(basePath, relativePath);
     console.log("DEBUG: Computed filePath:", filePath);
 
@@ -285,26 +336,32 @@ app.get("/api/preview/*", async (req, res) => {
         const resizedImageBuffer = await image.resize(width, height).toBuffer();
         res.writeHead(200, {
           "Content-Type": mimeType,
-          "Content-Length": resizedImageBuffer.length,
+          "Content-Length": resizedImageBuffer.length
         });
         res.end(resizedImageBuffer);
       } else {
         const originalImageBuffer = await image.toBuffer();
         res.writeHead(200, {
           "Content-Type": mimeType,
-          "Content-Length": originalImageBuffer.length,
+          "Content-Length": originalImageBuffer.length
         });
         res.end(originalImageBuffer);
       }
     } else {
       res.download(filePath);
     }
+
+    // Log aksi preview file
+    sendLog("Preview", {
+      message: "Preview requested",
+      requestedFile: relativePath,
+      ip: req.ip
+    });
   } catch (error) {
     console.error("DEBUG: Error in preview endpoint:", error);
     res.status(500).send("Internal Server Error");
   }
 });
-
 
 // =====================
 // ERROR HANDLING MIDDLEWARE
@@ -313,7 +370,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.httpStatusCode || 500).send({
     message: err.message || "Internal Server Error",
-    error: err,
+    error: err
   });
 });
 
