@@ -1,7 +1,5 @@
 const express = require("express");
 require("dotenv").config();
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
 const verifyToken = require("./secure/verifyToken");
 const cors = require("cors");
 const multer = require("multer");
@@ -19,20 +17,9 @@ connectDB();
 
 const app = express();
 
-// Gunakan Helmet untuk pengamanan HTTP header
-app.use(helmet());
-
-// Middleware parsing
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-// Rate limiter khusus untuk GET endpoints
-const getLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 100, // maksimal 100 request per IP per window
-  message: "Too many requests from this IP, please try again later."
-});
 
 // Fungsi helper untuk mengirim log ke remote server
 async function sendLog(section, logData) {
@@ -157,7 +144,7 @@ const upload = multer({
 // =====================
 // ROOT ENDPOINT
 // =====================
-app.get("/", getLimiter, (req, res) => {
+app.get("/",  (req, res) => {
   res.send("Cloud CDN filer server is up :)");
   // Log akses root endpoint
   sendLog("Home", { message: "Root endpoint accessed", ip: req.ip });
@@ -185,57 +172,73 @@ app.post(
           createdString += "T00:00:00Z";
         }
         if (!isNaN(Date.parse(createdString))) {
-          createdDate = new Date(createdString);
+          createdDate = new Date(createdString).getTime(); // Mengubah ke timestamp
         } else if (!isNaN(createdString)) {
-          createdDate = new Date(parseInt(createdString));
+          createdDate = new Date(parseInt(createdString)).getTime(); // Mengubah ke timestamp
         } else {
           console.warn("Invalid 'created' date format:", createdString);
-          createdDate = new Date();
+          createdDate = Date.now(); // Menggunakan timestamp saat ini
         }
       } else {
-        createdDate = new Date();
+        createdDate = Date.now();
       }
 
       // Optional: Jika ada key khusus
-      const key = req.body.key ? `${req.body.key}${Date.now()}` : null;
+      const key = req.body.key ? `${req.body.key}${Date.now()}` : "";
 
       if (!file) {
-        const error = new Error("Please upload a file");
-        error.httpStatusCode = 400;
-        return next(error);
+        return res.status(400).json({ message: "Please upload a file" });
       }
+
+      // Ambil folder dari parameter yang dikirim
+      const folder = req.body.folder || req.query.folder || "default";
+
+      // Buat path file yang benar berdasarkan folder
+      const filePath = `/mnt/nfs-storage/assets/${folder}/${file.filename}`;
 
       // Simpan informasi file ke database
       const documentData = {
         app: req.body.app || "system",
-        path: file.path,
+        path: filePath,
+        key,
         created: createdDate,
-        delete: false
+        delete: false,
       };
-      if (key) {
-        documentData.key = key;
-      }
+
       const document = new Document(documentData);
       await document.save();
 
-      res.send({
+      // Buat URL untuk preview berdasarkan folder yang diberikan
+      const fileUrl = `${process.env.HOST_PREVIEW}${folder}/${file.filename}`;
+
+      res.json({
         message: "File uploaded successfully",
         filename: file.filename,
-        document
+        url: fileUrl,
+        document: {
+          _id: document._id,
+          app: document.app,
+          path: document.path,
+          key: document.key,
+          created: document.created,
+          delete: document.delete,
+          __v: document.__v,
+        },
       });
 
       // Log aksi upload file
       sendLog("UploadFile", {
         message: "Single file uploaded",
         filename: file.filename,
-        path: file.path,
-        app: req.body.app || "system"
+        path: filePath,
+        app: req.body.app || "system",
       });
     } catch (err) {
       next(err);
     }
   }
 );
+
 
 // =====================
 // MULTIPLE FILE UPLOAD
@@ -274,7 +277,7 @@ app.post(
 // =====================
 // PREVIEW ENDPOINT (dengan rate limiter)
 // =====================
-app.get("/api/preview/*", getLimiter, async (req, res) => {
+app.get("/api/preview/*",  async (req, res) => {
   try {
     // Dapatkan relative path dari URL
     const relativePath = req.params[0];
