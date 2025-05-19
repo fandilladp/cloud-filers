@@ -62,15 +62,19 @@ const upload = multer({
   fileFilter: function (req, file, cb) {
     const allowedMimeTypes = [
       "application/pdf",
+      "application/msword",
+      "application/vnd.ms-excel",
       "text/csv",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "image/png",
-      "image/jpeg",
+      "image/jpeg"
     ];
+    const allowedExtensions = [".pdf", ".csv", ".xls", ".xlsx", ".docx", ".doc", ".png", ".jpg", ".jpeg"];
+    const fileExtension = path.extname(file.originalname).toLowerCase();
 
     const mimeType = mimeTypes.lookup(file.originalname);
-    if (allowedMimeTypes.includes(mimeType)) {
+    if (allowedMimeTypes.includes(mimeType) || allowedExtensions.includes(fileExtension)) {
       cb(null, true);
     } else {
       const error = new Error(
@@ -118,7 +122,7 @@ app.post(
 app.get("/api/preview/*", async (req, res) => {
   const relativePath = req.params[0]; // Mendapatkan seluruh path setelah /api/preview/
   const filePath = path.join(process.env.STORAGE_PATH, relativePath);
-
+  
   // Periksa apakah file ada
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
@@ -167,7 +171,11 @@ app.get("/api/preview/*", async (req, res) => {
     const readStream = fs.createReadStream(filePath);
     readStream.pipe(res);
   } else if (
-    ["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(
+    [
+      "text/csv", 
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel"
+    ].includes(
       mimeType
     )
   ) {
