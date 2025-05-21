@@ -70,7 +70,19 @@ const upload = multer({
       "image/png",
       "image/jpeg"
     ];
-    const allowedExtensions = [".pdf", ".csv", ".xls", ".xlsx", ".docx", ".doc", ".png", ".jpg", ".jpeg"];
+    const allowedExtensions = [
+      ".pdf",
+      ".csv",
+      ".xls",
+      ".xlsx",
+      ".docx",
+      ".doc",
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".zip",
+      ".rar"
+    ];
     const fileExtension = path.extname(file.originalname).toLowerCase();
 
     const mimeType = mimeTypes.lookup(file.originalname);
@@ -78,7 +90,7 @@ const upload = multer({
       cb(null, true);
     } else {
       const error = new Error(
-        "Invalid file type. Only PDF, CSV, Excel, and Word files are allowed."
+        "Invalid file type. Only PDF, CSV, ZIP, RAR, Excel, and Word files are allowed."
       );
       error.httpStatusCode = 400;
       cb(error);
@@ -174,7 +186,10 @@ app.get("/api/preview/*", async (req, res) => {
     [
       "text/csv", 
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-excel"
+      "application/vnd.ms-excel",
+      "application/zip",
+      "application/x-rar-compressed",
+      "application/vnd.rar"
     ].includes(
       mimeType
     )
